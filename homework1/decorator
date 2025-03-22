@@ -1,0 +1,58 @@
+import functools
+import requests
+import tracemalloc
+from collections import defaultdict
+
+
+def lfu_cache(max_limit=64):
+    def decorator(func):
+        cache = {}
+        freq = defaultdict(int)
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
+            freq[key] += 1
+
+            if key in cache:
+                return cache[key]
+            if len(cache) >= max_limit:
+                lfu_key = min(freq, key=lambda k: freq[k])
+                del cache[lfu_key]
+                del freq[lfu_key]
+
+            result = func(*args, **kwargs)
+            cache[key] = result
+            return result
+
+        return wrapper
+    return decorator
+
+def measure_memory(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        tracemalloc.start()
+        result = func(*args, **kwargs)
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        print(f"[MEMORY] пам'ять {current / 1024:.2f} KB . {peak / 1024:.2f} KB")
+        return result
+    return wrapper
+
+@measure_memory
+@lfu_cache(max_limit=5)
+def fetch_url(url, first_n=100):
+    print(f"[FETCH] Завантаження: {url}")
+    res = requests.get(url)
+    return res.content[:first_n] if first_n else res.content
+
+if __name__ == "__main__":
+    urls = [
+        "https://uk.wikipedia.org/wiki/Україна",
+        "https://www.google.com",
+        "https://hotline.ua",
+    ]
+    for url in urls:
+        content = fetch_url(url)
+        print(content.decode("utf-8"))
+        print("-" * 50)
